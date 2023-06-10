@@ -169,58 +169,6 @@ myAnimation <- animate(p2, duration = 20, fps = 12, width = 1250, height = 865, 
 
 
 ```{r}
-# function to get the data from positions of the teams and store in data.csv file (no need to call if already done once)
-get_data <- function(){
-  for(rodada in 1:38){
-    url <- paste0("https://www.ogol.com.br/edition.php?jornada_in=",rodada,"&id_edicao=162047&fase=158552")
-    # response <- GET(url)
-    # html_content <- content(response, as = "text")
-    html_content <- url
-    
-    # download page content
-    pagina <- read_html(html_content)
-    
-    # accessing table of the page
-    tabela <- pagina %>% html_node("#page_main.home") |> html_node(".box") |>
-      html_node("tbody")
-    
-    # converting table content to dataframe
-    dataframe <- tabela %>% html_table(fill = TRUE)
-    
-    # select desired columns
-    dataframe <- (dataframe)[c("X1","X3")]
-    
-    print(dataframe)
-    
-    # function to remove accentuation of team names
-    remove_accents <- function(text) {
-      # Convert the text to Unicode normalization form D (NFD)
-      text_nfd <- stri_trans_nfc(text)
-      # Remove diacritical marks
-      text_no_accents <- stri_trans_general(text_nfd, "Latin-ASCII")
-      return(text_no_accents)
-    }
-    
-    # Remove accentuation from the vector of words of teams names
-    words_no_accents <- remove_accents(dataframe$X3)
-    words_lower <- str_to_lower(words_no_accents)
-    dataframe$X3 <- str_replace_all(words_lower, "\\s", "-")
-    dataframe$round <- rodada
-    colnames(dataframe) <- c("position","team","round")
-    df <- rbind(df,dataframe)
-    
-    # time to get the next information
-    Sys.sleep(40)
-  }
-}
-
-# uncomment the line below to extract the data
-# write.csv(df, file="data.csv")
-```
-
-
-
-```{r}
 # function to get gif file and add bars in the top and bottom with the championship information
 # notice that the bigger the file, very slow will become the code (don't recommended process thsi function)
 banner_complement <- function(gifname){
