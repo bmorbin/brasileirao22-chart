@@ -1,0 +1,272 @@
+---
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(gganimate)
+library(gifski) # to renderer images and join all of them in gif
+library(png)
+library(ggimage) # to add logo teams in plot
+library(rsvg) 
+library(dplyr) 
+library(rvest) # for webscrapping
+library(httr)
+library(magick) # to modify images
+library(stringi) 
+library(showtext) # use different font families
+```
+
+
+```{r}
+positions <- 1:20 # positions of the championship
+rounds <- (length(positions)-1)*2 # 38 rounds in the championship 
+
+table <- read.csv("data.csv") # table with teams and respective position for each round
+table <- table |> select(-X) |> mutate(step=round) # add step variable for gganimate frames
+
+# keep last frame for a few seconds
+last_round <- table |> filter(round==38) 
+for(i in 39:48){
+  table <- rbind(table, last_round |> mutate(step=i))
+}
+
+# add trophy states to the dataframe
+trophy_steps <- data.frame(position=1, team='trofeu', round=c(rep(35,33),35,36,37,38,39), step=1:38)
+last_state_trophy <- trophy_steps |> filter(step==38)
+for(i in 39:48){
+  trophy_steps <- rbind(trophy_steps, last_state_trophy |> mutate(step=i))
+}
+
+table <- rbind(table, trophy_steps)
+
+# connect team with logo in the daframe
+teams_names <- c('trofeu','america-mineiro','athletico-paranaense','atletico-goianiense','atletico-mineiro','avai','botafogo','ceara','corinthians','coritiba','cuiaba','flamengo','fluminense','fortaleza','goias','internacional','juventude','palmeiras','red-bull-bragantino','santos','sao-paulo')
+
+team_logo <- data.frame(team=teams_names,
+                        image = paste0("logos-times//",teams_names,".png"))
+table <- inner_join(table, team_logo, by="team")
+
+# Define team colors for the lines in the plot (transparent for trophy line to don't appears)
+team_colors <- c('transparent','#5ACC88','#700E15','#A50814','#515151','#279ECC','#010101','#20221E','#0A0A0A','#0B554F','#FAAB18','#E80A15','#962A3C','#0061AA','#00685B','#E42428','#069247','#025B2C','#D2003C','#AFAFAF','#ED1C24')
+names(team_colors) <- team_names
+```
+
+```{r}
+# load different font-families to the plot
+font_add_google("Montserrat",family = "Montserrat")
+font_add_google("Ubuntu Mono",family = "Ubuntu Mono")
+showtext_auto()
+```
+
+```{r}
+# make a small dataframe to draw striped rows in the plot
+strip_rows <- data.frame(position=positions) |> 
+  mutate(xmin=-1,xmax=39.5,
+         y_position=positions,
+         ymin=y_position-0.5,ymax=y_position+0.5,
+         fill=rep(c("odd","even"),length.out=length(positions))) |>
+  pivot_longer(cols=c(xmin,xmax), values_to="x", names_to="xmin_xmax") |> 
+  select(-xmin_xmax)
+
+# another small dataframe to colorize positions achievements
+position_achievement <- data.frame(position=positions) |> 
+  mutate(xmin=-1,xmax=-0.85,
+         y_position=positions,
+         ymin=y_position-0.5,ymax=y_position+0.5,
+         fill_achievement=c(rep("libertadores",4),rep("qualifica",2),rep("sula",6),rep("permanece",4),rep("rebaixa",4))) |> 
+  pivot_longer(cols=c(xmin,xmax), values_to="x", names_to="xmin_xmax") |> 
+  select(-xmin_xmax)
+```
+
+
+
+```{r, fig.asp=34/42,fig.width="40in"}
+p <- ggplot(table, aes(round, position, group=team))+
+  geom_ribbon(data=strip_rows,
+              aes(x=x, ymin=ymin,ymax=ymax, group=y_position, fill=fill),
+              inherit.aes = F)+
+  geom_ribbon(data=position_achievement,
+              aes(x=x, ymin=ymin,ymax=ymax, group=y_position, fill=fill_achievement),
+              inherit.aes = F)+
+  scale_fill_manual(values=c(libertadores="#81db4d",
+                             qualifica="#3e6ced",
+                             sula="#ed8a34",
+                             permanece="#c4c4c4",
+                             rebaixa="#f53527",
+                             odd="#D0D8A3",
+                             even="#EAEAEA"),
+                    labels=c(libertadores="Fase de grupos da Copa Libertadores",
+                             qualifica="Qualificatórias da Copa Libertadores",
+                             sula="Fase de grupos da Copa Sul-Americana",
+                             rebaixa="Rebaixamento"),
+                    name=NULL,
+                    breaks=c("libertadores","qualifica","sula","rebaixa")
+                    )+
+  geom_text(data = data.frame(lab=positions),
+            aes(label=lab, x = -0.3, y = lab),
+            inherit.aes = F,
+            family="Montserrat", color="#191919", fontface="bold"
+            )+
+  geom_vline(xintercept = 1:rounds,color="#C7FE00", size=.3)+
+  geom_hline(yintercept = c(4.5,6.5,12.5,16.5),color="#919191", size=.3)+
+  geom_line(aes(color=team),size=.6)+
+  scale_color_manual(values=team_colors)+
+  guides(color="none")+
+  geom_image(aes(image=image),asp=40.5/20, size=.025, by = "width")+
+  scale_y_continuous(
+    breaks = positions,
+    expand = c(0,0),
+    limits = c(20.5,0.5),
+    trans = "reverse")+
+  scale_x_continuous(
+    breaks = 1:rounds,
+    labels = 1:rounds,
+    expand = c(0,0),
+    limits = c(-1,39.5),
+    position = "top", 
+    minor_breaks = 1:rounds)+
+  labs(
+    x=NULL, y=NULL,
+    title = "Brasileirão 2022 - Série A",
+    caption  = "Feito por Bruno Groper Morbin")+
+  theme(legend.position = "bottom",
+        legend.direction = "vertical",
+        legend.justification = "left",
+        legend.background = element_blank(),
+        legend.text = element_text(family = "Montserrat",colour = "#F2F2F2", size=8),
+        legend.margin = margin(t=-5,unit = "mm"),
+        legend.key.size = unit(2.7,"mm"),
+        legend.key = element_rect(color = NA, fill = NA),
+        legend.spacing.x = unit(.5,"mm"),
+        plot.title = element_text(face = "bold",hjust = 0.5, margin = margin(t=2,b=5, unit = "mm"), family = "Montserrat", colour = "white", size=17),
+        plot.margin = margin(t=0,b=0,l=1.2,r=1.5, unit="mm"),
+        plot.caption =  element_text(family = "Montserrat", colour = "gray", size=9),
+        plot.background = element_rect(fill="#131428" , colour = "transparent"),
+        panel.background = element_blank(),
+        panel.grid = element_blank(),
+        aspect.ratio = 20/40.5,
+        axis.text.x = element_text(colour = "white",family = "Ubuntu Mono", size=8.5),
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.line.y = element_blank(),
+        axis.title.y = element_blank()
+        ); p
+```
+
+```{r}
+# inserting frames steps
+p2 <- p + 
+  transition_reveal(step)+
+  ease_aes('cubic-in-out') # effect to each step
+
+myAnimation <- animate(p2, duration = 20, fps = 12, width = 1250, height = 865, renderer = gifski_renderer(), res = 200, type = "cairo", bg="#131428")
+## anim_save("test20s12fps.gif", animation = myAnimation)
+```
+
+
+```{r}
+# function to get the data from positions of the teams and store in data.csv file (no need to call if already done once)
+get_data <- function(){
+  for(rodada in 1:38){
+    url <- paste0("https://www.ogol.com.br/edition.php?jornada_in=",rodada,"&id_edicao=162047&fase=158552")
+    # response <- GET(url)
+    # html_content <- content(response, as = "text")
+    html_content <- url
+    
+    # download page content
+    pagina <- read_html(html_content)
+    
+    # accessing table of the page
+    tabela <- pagina %>% html_node("#page_main.home") |> html_node(".box") |>
+      html_node("tbody")
+    
+    # converting table content to dataframe
+    dataframe <- tabela %>% html_table(fill = TRUE)
+    
+    # select desired columns
+    dataframe <- (dataframe)[c("X1","X3")]
+    
+    print(dataframe)
+    
+    # function to remove accentuation of team names
+    remove_accents <- function(text) {
+      # Convert the text to Unicode normalization form D (NFD)
+      text_nfd <- stri_trans_nfc(text)
+      # Remove diacritical marks
+      text_no_accents <- stri_trans_general(text_nfd, "Latin-ASCII")
+      return(text_no_accents)
+    }
+    
+    # Remove accentuation from the vector of words of teams names
+    words_no_accents <- remove_accents(dataframe$X3)
+    words_lower <- str_to_lower(words_no_accents)
+    dataframe$X3 <- str_replace_all(words_lower, "\\s", "-")
+    dataframe$round <- rodada
+    colnames(dataframe) <- c("position","team","round")
+    df <- rbind(df,dataframe)
+    
+    # time to get the next information
+    Sys.sleep(40)
+  }
+}
+
+# uncomment the line below to extract the data
+# write.csv(df, file="data.csv")
+```
+
+
+
+```{r}
+# function to get gif file and add bars in the top and bottom with the championship information
+# notice that the bigger the file, very slow will become the code (don't recommended process thsi function)
+banner_complement <- function(gifname){
+  plot <- image_read(gifname)
+  plot_width <- image_info(plot[1])$width
+  plot_height <- image_info(plot[1])$height
+  
+  # height to complete banner
+  inc <- plot_width-plot_height - 125
+  h_top <- round(inc*(3.5/5),0)
+  h_bot <- inc-h_top
+  
+  # logo for add in the banner
+  logo_raw <- image_read("logos//logo_brasileirao.png")
+
+  logo <- logo_raw %>%
+    image_resize(geometry=(paste0(h_top-h_bot,"x",(image_info(logo_raw)$width/image_info(logo_raw)$height)*(h_top-h_bot))))
+  
+  t_empty_col_width <- plot_width
+  t_empty_col_height <- h_top
+  
+  t_empty_col <- image_blank(width = t_empty_col_width, height = t_empty_col_height,color = "#131428")
+  
+  top_banner <- image_composite(t_empty_col,logo,offset = paste0("+",t_empty_col_width/2-(image_info(logo)$width/2),"+",t_empty_col_height-image_info(logo)$height))
+  
+  b_empty_col_width <- plot_width
+  b_empty_col_height <- h_bot
+  
+  b_empty_col <- image_blank(width = b_empty_col_width, height = b_empty_col_height,color = "#131428")
+  
+  bar_empty_col_width <- plot_width
+  bar_empty_col_height <- h_bot*(0.8/2)
+  
+  bar_empty_col <- image_blank(width = bar_empty_col_width, height = bar_empty_col_height,color = "#C7FE00")
+  
+  frames <- lapply(plot, function(frame) {
+    main <- image_append(c(top_banner,frame, b_empty_col),stack = T)
+    step1 <- image_composite(main, bar_empty_col,offset="+0+0")
+    step2 <- image_composite(step1,bar_empty_col,offset=paste0("+0+",image_info(step1)$height-image_info(bar_empty_col)$height))
+  })
+  
+  animation <- image_animate(image_join(frames))
+  
+  image_write(animation, "banner_complete.gif")
+}
+```
+
+
+
